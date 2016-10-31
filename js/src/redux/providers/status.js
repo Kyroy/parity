@@ -16,8 +16,6 @@
 
 import { statusBlockNumber, statusCollection, statusLogs } from './statusActions';
 
-import { parityNode } from '../../environment';
-
 export default class Status {
   constructor (store, api) {
     this._api = api;
@@ -51,13 +49,14 @@ export default class Status {
       setTimeout(this._pollPing, timeout);
     };
 
-    fetch(`${parityNode}/api/ping`, { method: 'GET' })
+    fetch('/', { method: 'GET' })
       .then((response) => dispatch(!!response.ok))
       .catch(() => dispatch(false));
   }
 
   _pollTraceMode = () => {
-    return this._api.trace.block()
+    return this._api.trace
+      .block()
       .then(blockTraces => {
         // Assumes not in Trace Mode if no transactions
         // in latest block...
@@ -82,6 +81,7 @@ export default class Status {
       .all([
         this._api.web3.clientVersion(),
         this._api.eth.coinbase(),
+        this._api.ethcore.dappsPort(),
         this._api.ethcore.defaultExtraData(),
         this._api.ethcore.extraData(),
         this._api.ethcore.gasFloorTarget(),
@@ -95,12 +95,13 @@ export default class Status {
         this._api.eth.syncing(),
         this._pollTraceMode()
       ])
-      .then(([clientVersion, coinbase, defaultExtraData, extraData, gasFloorTarget, hashrate, minGasPrice, netChain, netPeers, netPort, nodeName, rpcSettings, syncing, traceMode]) => {
+      .then(([clientVersion, coinbase, dappsPort, defaultExtraData, extraData, gasFloorTarget, hashrate, minGasPrice, netChain, netPeers, netPort, nodeName, rpcSettings, syncing, traceMode]) => {
         const isTest = netChain === 'morden' || netChain === 'testnet';
 
         this._store.dispatch(statusCollection({
           clientVersion,
           coinbase,
+          dappsPort,
           defaultExtraData,
           extraData,
           gasFloorTarget,
