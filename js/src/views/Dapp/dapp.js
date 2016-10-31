@@ -15,21 +15,31 @@
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
 import React, { Component, PropTypes } from 'react';
+import { connect } from 'react-redux';
+import { bindActionCreators } from 'redux';
 
 import styles from './dapp.css';
 
-const dapphost = process.env.NODE_ENV === 'production' ? 'http://127.0.0.1:8080/ui' : '';
+const isProd = process.env.NODE_ENV === 'production';
 
-export default class Dapp extends Component {
+class Dapp extends Component {
   static propTypes = {
-    params: PropTypes.object
+    params: PropTypes.object,
+    dappsPort: PropTypes.string.isRequired
   };
 
   render () {
+    const { dappsPort } = this.props;
     const { name, type } = this.props.params;
-    const src = type === 'global'
-      ? `${dapphost}/${name}.html`
-      : `http://127.0.0.1:8080/${name}/`;
+    let src = '';
+
+    if (type === global) {
+      src = isProd
+        ? `http://127.0.0.1:${dappsPort}/ui/${name}.html`
+        : `/${name}/html`;
+    } else {
+      src = `http://127.0.0.1:${dappsPort}/${name}/`;
+    }
 
     return (
       <iframe
@@ -43,3 +53,18 @@ export default class Dapp extends Component {
     );
   }
 }
+
+function mapStateToProps (state) {
+  const { dappsPort } = state.nodeStatus;
+
+  return { dappsPort: dappsPort.toString() };
+}
+
+function mapDispatchToProps (dispatch) {
+  return bindActionCreators({}, dispatch);
+}
+
+export default connect(
+  mapStateToProps,
+  mapDispatchToProps
+)(Dapp);

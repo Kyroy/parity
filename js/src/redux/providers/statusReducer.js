@@ -19,6 +19,7 @@ import { handleActions } from 'redux-actions';
 
 const initialState = {
   blockNumber: new BigNumber(0),
+  dappsPort: new BigNumber('8080'),
   devLogs: [],
   devLogsLevels: null,
   devLogsEnabled: false,
