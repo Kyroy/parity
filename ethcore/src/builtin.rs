@@ -137,13 +137,14 @@ impl Impl for CustomPrecompile {
 		println!("hash {:?}", hash);
 		output.write(0, input);
 
+		let pepper_dir = match env::var("PEPPER_DIR") {
+			Ok(dir) => dir,
+			_ => return,
+		}
+		println!("pepper_dir={:?}", pepper_dir);
 		// run: bin/pepper_verifier_mm_pure_arith verify mm_pure_arith.vkey mm_pure_arith.inputs mm_pure_arith.outputs  mm_pure_arith.proof
-		// TODO use PEPPER_DIR env variable
-		let pepper_dir = env::var("PEPPER_DIR");
-		println!("pepper_dir {:?}", pepper_dir);
-		let output = Command::new("sh")
- 							 .current_dir("/pequin/pepper")
- 							 .arg("bin/pepper_verifier_mm_pure_arith")
+		let output = Command::new("bin/pepper_verifier_mm_pure_arith")
+ 							 .current_dir(pepper_dir)
 							 .arg("verify")
  							 .arg("mm_pure_arith.vkey")
  							 .arg("mm_pure_arith.inputs")
