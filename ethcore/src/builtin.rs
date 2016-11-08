@@ -21,6 +21,7 @@ use std::cmp::min;
 use util::{U256, H256, Hashable, FixedHash, BytesRef};
 use ethkey::{Signature, recover as ec_recover};
 use ethjson;
+use std::process::Command;
 
 /// Native implementation of a built-in contract.
 pub trait Impl: Send + Sync {
@@ -81,6 +82,7 @@ impl From<ethjson::spec::Builtin> for Builtin {
 // Ethereum builtin creator.
 fn ethereum_builtin(name: &str) -> Box<Impl> {
 	match name {
+		"customPrecompile" => Box::new(customPrecompile) as Box<Impl>,
 		"identity" => Box::new(Identity) as Box<Impl>,
 		"ecrecover" => Box::new(EcRecover) as Box<Impl>,
 		"sha256" => Box::new(Sha256) as Box<Impl>,
@@ -97,6 +99,9 @@ fn ethereum_builtin(name: &str) -> Box<Impl> {
 // - ripemd160
 
 #[derive(Debug)]
+struct customPrecompile;
+
+#[derive(Debug)]
 struct Identity;
 
 #[derive(Debug)]
@@ -108,6 +113,57 @@ struct Sha256;
 #[derive(Debug)]
 struct Ripemd160;
 
+impl Impl for customPrecompile {
+	fn execute(&self, input: &[u8], output: &mut BytesRef) {
+		println!("customPrecompile({:?})", input);
+		println!("input.len() {}", input.len());
+
+		let mut input_array = [0; 128]; // TODO  128 is fixed value!
+		input_array[..input.len()].copy_from_slice(&input[..input.len()]);
+
+		let hash = H256::from_slice(&input_array[0..32]);
+		let mut args = Vec::new();
+
+		for i in 0..(input.len() - 4) / 32 {
+			args.push(H256::from_slice(&input_array[(i * 32) + 4..((i + 1) * 32) + 4]))
+		}
+
+		let mut counter = 0;
+		for x in &args {
+			println!("{}: {:?}", counter, x);
+			counter += 1;
+		}
+		println!("hash {:?}", hash);
+		output.write(0, input);
+
+		// run: bin/pepper_verifier_mm_pure_arith verify mm_pure_arith.vkey mm_pure_arith.inputs mm_pure_arith.outputs  mm_pure_arith.proof
+		// let output = Command::new("sh")
+		// 					 .current_dir("/home/kyroy/github/pequin/pepper")
+		// 					 .arg("bin/pepper_verifier_mm_pure_arith verify")
+		// 					 .arg("mm_pure_arith.vkey")
+		// 					 .arg("mm_pure_arith.inputs")
+		// 					 .arg("mm_pure_arith.outputs")
+		// 					 .arg("mm_pure_arith.proof")
+		// 					 .output() // wait for command to finish
+		// 					 .expect("failed to execute process");
+		let output = Command::new("sh")
+ 							 .current_dir("/pepper")
+ 							 .arg("bin/pepper_verifier_mm_pure_arith verify")
+ 							 .arg("mm_pure_arith.vkey")
+ 							 .arg("mm_pure_arith.inputs")
+ 							 .arg("mm_pure_arith.outputs")
+ 							 .arg("mm_pure_arith.proof")
+ 							 .output() // wait for command to finish
+ 							 .expect("failed to execute process");
+
+		 println!("status: {}", output.status);
+		 println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+		 println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+		//
+		//  assert!(output.status.success())
+	}
+}
+
 impl Impl for Identity {
 	fn execute(&self, input: &[u8], output: &mut BytesRef) {
 		output.write(0, input);
@@ -116,6 +172,7 @@ impl Impl for Identity {
 
 impl Impl for EcRecover {
 	fn execute(&self, i: &[u8], output: &mut BytesRef) {
+		println!(">>>> EcRecover called!!");
 		let len = min(i.len(), 128);
 
 		let mut input = [0; 128];
@@ -144,6 +201,7 @@ impl Impl for EcRecover {
 
 impl Impl for Sha256 {
 	fn execute(&self, input: &[u8], output: &mut BytesRef) {
+		println!(">>>> Sha256 called!!");
 		let mut sha = Sha256Digest::new();
 		sha.input(input);
 
@@ -156,6 +214,7 @@ impl Impl for Sha256 {
 
 impl Impl for Ripemd160 {
 	fn execute(&self, input: &[u8], output: &mut BytesRef) {
+		println!(">>>> Ripemd160 called!!");
 		let mut sha = Ripemd160Digest::new();
 		sha.input(input);
 
