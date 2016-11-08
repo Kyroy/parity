@@ -22,6 +22,7 @@ use util::{U256, H256, Hashable, FixedHash, BytesRef};
 use ethkey::{Signature, recover as ec_recover};
 use ethjson;
 use std::process::Command;
+use std::env;
 
 /// Native implementation of a built-in contract.
 pub trait Impl: Send + Sync {
@@ -82,7 +83,7 @@ impl From<ethjson::spec::Builtin> for Builtin {
 // Ethereum builtin creator.
 fn ethereum_builtin(name: &str) -> Box<Impl> {
 	match name {
-		"customPrecompile" => Box::new(customPrecompile) as Box<Impl>,
+		"customPrecompile" => Box::new(CustomPrecompile) as Box<Impl>,
 		"identity" => Box::new(Identity) as Box<Impl>,
 		"ecrecover" => Box::new(EcRecover) as Box<Impl>,
 		"sha256" => Box::new(Sha256) as Box<Impl>,
@@ -99,7 +100,7 @@ fn ethereum_builtin(name: &str) -> Box<Impl> {
 // - ripemd160
 
 #[derive(Debug)]
-struct customPrecompile;
+struct CustomPrecompile;
 
 #[derive(Debug)]
 struct Identity;
@@ -113,7 +114,7 @@ struct Sha256;
 #[derive(Debug)]
 struct Ripemd160;
 
-impl Impl for customPrecompile {
+impl Impl for CustomPrecompile {
 	fn execute(&self, input: &[u8], output: &mut BytesRef) {
 		println!("customPrecompile({:?})", input);
 		println!("input.len() {}", input.len());
@@ -137,18 +138,13 @@ impl Impl for customPrecompile {
 		output.write(0, input);
 
 		// run: bin/pepper_verifier_mm_pure_arith verify mm_pure_arith.vkey mm_pure_arith.inputs mm_pure_arith.outputs  mm_pure_arith.proof
-		// let output = Command::new("sh")
-		// 					 .current_dir("/home/kyroy/github/pequin/pepper")
-		// 					 .arg("bin/pepper_verifier_mm_pure_arith verify")
-		// 					 .arg("mm_pure_arith.vkey")
-		// 					 .arg("mm_pure_arith.inputs")
-		// 					 .arg("mm_pure_arith.outputs")
-		// 					 .arg("mm_pure_arith.proof")
-		// 					 .output() // wait for command to finish
-		// 					 .expect("failed to execute process");
+		// TODO use PEPPER_DIR env variable
+		let pepper_dir = env::var("PEPPER_DIR");
+		println!("pepper_dir {:?}", pepper_dir);
 		let output = Command::new("sh")
- 							 .current_dir("/pepper")
- 							 .arg("bin/pepper_verifier_mm_pure_arith verify")
+ 							 .current_dir("/pequin/pepper")
+ 							 .arg("bin/pepper_verifier_mm_pure_arith")
+							 .arg("verify")
  							 .arg("mm_pure_arith.vkey")
  							 .arg("mm_pure_arith.inputs")
  							 .arg("mm_pure_arith.outputs")
