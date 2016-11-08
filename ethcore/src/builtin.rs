@@ -140,8 +140,8 @@ impl Impl for CustomPrecompile {
 		let pepper_dir = match env::var("PEPPER_DIR") {
 			Ok(dir) => dir,
 			_ => return,
-		}
-		println!("pepper_dir={:?}", pepper_dir);
+		};
+		println!("pepper_dir {:?}", pepper_dir);
 		// run: bin/pepper_verifier_mm_pure_arith verify mm_pure_arith.vkey mm_pure_arith.inputs mm_pure_arith.outputs  mm_pure_arith.proof
 		let output = Command::new("bin/pepper_verifier_mm_pure_arith")
  							 .current_dir(pepper_dir)
