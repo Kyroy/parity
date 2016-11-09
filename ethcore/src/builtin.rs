@@ -118,13 +118,15 @@ impl Impl for CustomPrecompile {
 	fn execute(&self, input: &[u8], output: &mut BytesRef) {
 		println!("customPrecompile({:?})", input);
 		println!("input.len() {}", input.len());
+		println!("output.len() {}", output.len());
+
+		// set output to false
+		// output.write(output.len() - 1, 0);
 
 		let mut input_array = [0; 128]; // TODO  128 is fixed value!
 		input_array[..input.len()].copy_from_slice(&input[..input.len()]);
 
-		let hash = H256::from_slice(&input_array[0..32]);
 		let mut args = Vec::new();
-
 		for i in 0..(input.len() - 4) / 32 {
 			args.push(H256::from_slice(&input_array[(i * 32) + 4..((i + 1) * 32) + 4]))
 		}
@@ -134,16 +136,14 @@ impl Impl for CustomPrecompile {
 			println!("{}: {:?}", counter, x);
 			counter += 1;
 		}
-		println!("hash {:?}", hash);
 		output.write(0, input);
 
 		let pepper_dir = match env::var("PEPPER_DIR") {
 			Ok(dir) => dir,
 			_ => return,
 		};
-		println!("pepper_dir {:?}", pepper_dir);
 		// run: bin/pepper_verifier_mm_pure_arith verify mm_pure_arith.vkey mm_pure_arith.inputs mm_pure_arith.outputs  mm_pure_arith.proof
-		let output = Command::new("bin/pepper_verifier_mm_pure_arith")
+		let result = Command::new("bin/pepper_verifier_mm_pure_arith")
  							 .current_dir(pepper_dir)
 							 .arg("verify")
  							 .arg("mm_pure_arith.vkey")
@@ -152,12 +152,11 @@ impl Impl for CustomPrecompile {
  							 .arg("mm_pure_arith.proof")
  							 .output() // wait for command to finish
  							 .expect("failed to execute process");
-
-		 println!("status: {}", output.status);
-		 println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-		 println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-		//
-		//  assert!(output.status.success())
+		if result.status == 0 {
+			if String::from_utf8_lossy(&result.stdout).contains("VERIFICATION SUCCESSFUL") {
+				output.write(output.len() - 1, 1);
+			}
+		}
 	}
 }
 
