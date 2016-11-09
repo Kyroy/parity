@@ -120,8 +120,9 @@ impl Impl for CustomPrecompile {
 		println!("input.len() {}", input.len());
 		println!("output.len() {}", output.len());
 
+		// TODO set all bits of output to 0?
 		// set output to false
-		// output.write(output.len() - 1, 0);
+		output.write(output.len() - 1, 0);
 
 		let mut input_array = [0; 128]; // TODO  128 is fixed value!
 		input_array[..input.len()].copy_from_slice(&input[..input.len()]);
