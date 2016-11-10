@@ -21,6 +21,7 @@ use std::cmp::min;
 use util::{U256, H256, Hashable, FixedHash, BytesRef};
 use ethkey::{Signature, recover as ec_recover};
 use ethjson;
+
 use std::process::Command;
 use std::env;
 
@@ -114,48 +115,69 @@ struct Sha256;
 #[derive(Debug)]
 struct Ripemd160;
 
+fn usize_from_array(arr: &[u8]) -> usize {
+	let mut result: usize = 0;
+	for i in 0..arr.len() {
+		if arr[i] != 0 {
+			// TODO panics when too big (pow)
+			result += arr[i] as usize * 256usize.pow((arr.len() - 1 - i) as u32);
+		}
+	}
+	return result;
+}
+
+fn get_args(input: Vec<u8>) -> Vec<Vec<u8>> {
+	let arg_count = usize_from_array(&input[..32]) / 32;
+	let mut args = Vec::new();
+	for i in 0..arg_count {
+		let arg_size_start = usize_from_array(&input[32 * i..32 * (i + 1)]);
+		let arg_size = usize_from_array(&input[arg_size_start..arg_size_start + 32]);
+		let arg_start = arg_size_start + 32;
+		let arg_end = arg_start + arg_size;
+		args.push(input[arg_start..arg_end].to_vec())
+	}
+	return args;
+}
+
 impl Impl for CustomPrecompile {
 	fn execute(&self, input: &[u8], output: &mut BytesRef) {
-		println!("customPrecompile({:?})", input);
-		println!("input.len() {}", input.len());
-		println!("output.len() {}", output.len());
-
-		// TODO set all bits of output to 0?
-		// set output to false
-		output.write(output.len() - 1, 0);
-
-		let mut input_array = [0; 128]; // TODO  128 is fixed value!
-		input_array[..input.len()].copy_from_slice(&input[..input.len()]);
-
-		let mut args = Vec::new();
-		for i in 0..(input.len() - 4) / 32 {
-			args.push(H256::from_slice(&input_array[(i * 32) + 4..((i + 1) * 32) + 4]))
+		// TODO check method signature
+		// TODO handle unwrap panics?
+		let output_len = output.len();
+		// set all bits of output to 0 => false
+		for i in 0..output_len {
+			output.write(i, &[0]);
 		}
 
-		let mut counter = 0;
-		for x in &args {
-			println!("{}: {:?}", counter, x);
-			counter += 1;
-		}
-		output.write(0, input);
+		let args = get_args(input[4..].to_vec());
+
+		let ref arg_name = args.get(0).unwrap();
+		let name = String::from_utf8(arg_name.to_vec()).unwrap();
+		// TODO parse other args
 
 		let pepper_dir = match env::var("PEPPER_DIR") {
 			Ok(dir) => dir,
 			_ => return,
 		};
+
 		// run: bin/pepper_verifier_mm_pure_arith verify mm_pure_arith.vkey mm_pure_arith.inputs mm_pure_arith.outputs  mm_pure_arith.proof
-		let result = Command::new("bin/pepper_verifier_mm_pure_arith")
- 							 .current_dir(pepper_dir)
+		let executable = format!("bin/pepper_verifier_{}", name);
+		let vkey = format!("{}.vkey", name);
+		let inputs = format!("{}.inputs", name);
+		let outputs = format!("{}.outputs", name);
+		let proof = format!("{}.proof", name);
+		let result = Command::new(executable)
+							 .current_dir(pepper_dir)
 							 .arg("verify")
- 							 .arg("mm_pure_arith.vkey")
- 							 .arg("mm_pure_arith.inputs")
- 							 .arg("mm_pure_arith.outputs")
- 							 .arg("mm_pure_arith.proof")
- 							 .output() // wait for command to finish
- 							 .expect("failed to execute process");
-		if result.status == 0 {
+							 .arg(vkey)
+							 .arg(inputs)
+							 .arg(outputs)
+							 .arg(proof)
+							 .output() // wait for command to finish
+							 .expect("failed to execute process");
+		if result.status.success() {
 			if String::from_utf8_lossy(&result.stdout).contains("VERIFICATION SUCCESSFUL") {
-				output.write(output.len() - 1, 1);
+				output.write(output_len - 1, &[1]);
 			}
 		}
 	}
