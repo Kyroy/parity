@@ -24,6 +24,10 @@ use ethjson;
 
 use std::process::Command;
 use std::env;
+use std::fs::File;
+use std::path::Path;
+use std::error::Error;
+use std::io::prelude::*;
 
 /// Native implementation of a built-in contract.
 pub trait Impl: Send + Sync {
@@ -126,17 +130,55 @@ fn usize_from_array(arr: &[u8]) -> usize {
 	return result;
 }
 
-fn get_args(input: Vec<u8>) -> Vec<Vec<u8>> {
-	let arg_count = usize_from_array(&input[..32]) / 32;
+enum EthType {
+	// fixed sized
+	Address,
+	Bytes32,
+	// dynamic sized
+	String,
+	Bytes,
+}
+
+fn get_args(arg_types: &[EthType], input: Vec<u8>) -> Vec<Vec<u8>> {
+	let arg_count = arg_types.len();
 	let mut args = Vec::new();
 	for i in 0..arg_count {
-		let arg_size_start = usize_from_array(&input[32 * i..32 * (i + 1)]);
-		let arg_size = usize_from_array(&input[arg_size_start..arg_size_start + 32]);
-		let arg_start = arg_size_start + 32;
-		let arg_end = arg_start + arg_size;
-		args.push(input[arg_start..arg_end].to_vec())
+		args.push(match arg_types[i] {
+			EthType::Address | EthType::Bytes32=> {
+				let arg_start = 32 * i;
+				let arg_end = 32 * (i + 1);
+				input[arg_start..arg_end].to_vec()
+			},
+			EthType::String | EthType::Bytes => {
+				let arg_size_start = usize_from_array(&input[32 * i..32 * (i + 1)]);
+				let arg_size = usize_from_array(&input[arg_size_start..arg_size_start + 32]);
+				let arg_start = arg_size_start + 32;
+				let arg_end = arg_start + arg_size;
+				input[arg_start..arg_end].to_vec()
+			},
+		});
 	}
 	return args;
+}
+
+fn write_to_file(filename: String, content: &[u8]) -> bool {
+	let path = Path::new(&filename);
+	let display = path.display();
+	let mut file = match File::create(&path) {
+		Ok(file) => file,
+		Err(why) => {
+			println!("Could not create file {}: {}", display, why.description());
+			return false
+		},
+	};
+	match file.write_all(content) {
+		Ok(_) => {}, //println!("successfully wrote to {}", display),
+		Err(why) => {
+			println!("couldn't write to {}: {}", display, why.description());
+			return false
+		},
+	}
+	return true;
 }
 
 impl Impl for CustomPrecompile {
@@ -149,36 +191,47 @@ impl Impl for CustomPrecompile {
 			output.write(i, &[0]);
 		}
 
-		let args = get_args(input[4..].to_vec());
-
-		let ref arg_name = args.get(0).unwrap();
-		let name = String::from_utf8(arg_name.to_vec()).unwrap();
-		// TODO parse other args
-
 		let pepper_dir = match env::var("PEPPER_DIR") {
 			Ok(dir) => dir,
 			_ => return,
 		};
 
-		// run: bin/pepper_verifier_mm_pure_arith verify mm_pure_arith.vkey mm_pure_arith.inputs mm_pure_arith.outputs  mm_pure_arith.proof
+		let args = get_args(&[EthType::String, EthType::Bytes32, EthType::String, EthType::String, EthType::String], input[4..].to_vec());
+
+		let ref arg_name = args.get(0).unwrap();
+		let name = String::from_utf8(arg_name.to_vec()).unwrap();
+
+		let ref arg_id = args.get(1).unwrap();
+		// use format for not shorten string with "..." (later)
+		let id = format!("{:?}", H256::from_slice(arg_id));
+
+		let ref arg_inputs = args.get(2).unwrap();
+		let ref arg_outputs = args.get(3).unwrap();
+		let ref arg_proof = args.get(4).unwrap();
+		if !write_to_file(format!("{}/prover_verifier_shared/{}.inputs", pepper_dir, id), arg_inputs) ||
+			!write_to_file(format!("{}/prover_verifier_shared/{}.outputs", pepper_dir, id), arg_outputs) ||
+			!write_to_file(format!("{}/prover_verifier_shared/{}.proof", pepper_dir, id), arg_proof) {
+			println!("Failed to write a file, return false");
+			return;
+		}
+
+		// run pequin verifier
 		let executable = format!("bin/pepper_verifier_{}", name);
 		let vkey = format!("{}.vkey", name);
-		let inputs = format!("{}.inputs", name);
-		let outputs = format!("{}.outputs", name);
-		let proof = format!("{}.proof", name);
-		let result = Command::new(executable)
-							 .current_dir(pepper_dir)
-							 .arg("verify")
-							 .arg(vkey)
-							 .arg(inputs)
-							 .arg(outputs)
-							 .arg(proof)
-							 .output() // wait for command to finish
-							 .expect("failed to execute process");
-		if result.status.success() {
-			if String::from_utf8_lossy(&result.stdout).contains("VERIFICATION SUCCESSFUL") {
-				output.write(output_len - 1, &[1]);
-			}
+		let inputs = format!("{}.inputs", id);
+		let outputs = format!("{}.outputs", id);
+		let proof = format!("{}.proof", id);
+		let cmd = Command::new(executable).current_dir(pepper_dir)
+			.arg("verify").arg(vkey).arg(inputs).arg(outputs).arg(proof).output();
+		match cmd {
+			Ok(result) => {
+				if result.status.success() {
+					if String::from_utf8_lossy(&result.stdout).contains("VERIFICATION SUCCESSFUL") {
+						output.write(output_len - 1, &[1]);
+					}
+				}
+			},
+			_ => return,
 		}
 	}
 }
