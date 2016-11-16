@@ -56,6 +56,7 @@ pub enum IoMessage<Message> where Message: Send + Clone + Sized {
 		handler_id: HandlerId,
 		token: TimerToken,
 		delay: u64,
+		once: bool,
 	},
 	RemoveTimer {
 		handler_id: HandlerId,
@@ -92,12 +93,24 @@ impl<Message> IoContext<Message> where Message: Send + Clone + Sync + 'static {
 		}
 	}
 
-	/// Register a new IO timer. 'IoHandler::timeout' will be called with the token.
+	/// Register a new recurring IO timer. 'IoHandler::timeout' will be called with the token.
 	pub fn register_timer(&self, token: TimerToken, ms: u64) -> Result<(), IoError> {
 		try!(self.channel.send_io(IoMessage::AddTimer {
 			token: token,
 			delay: ms,
 			handler_id: self.handler,
+			once: false,
+		}));
+		Ok(())
+	}
+
+	/// Register a new IO timer once. 'IoHandler::timeout' will be called with the token.
+	pub fn register_timer_once(&self, token: TimerToken, ms: u64) -> Result<(), IoError> {
+		try!(self.channel.send_io(IoMessage::AddTimer {
+			token: token,
+			delay: ms,
+			handler_id: self.handler,
+			once: true,
 		}));
 		Ok(())
 	}
@@ -163,6 +176,7 @@ impl<Message> IoContext<Message> where Message: Send + Clone + Sync + 'static {
 struct UserTimer {
 	delay: u64,
 	timeout: Timeout,
+	once: bool,
 }
 
 /// Root IO handler. Manages user handlers, messages and IO timers.
@@ -235,8 +249,14 @@ impl<Message> Handler for IoManager<Message> where Message: Send + Clone + Sync 
 		let handler_index  = token.0  / TOKENS_PER_HANDLER;
 		let token_id  = token.0  % TOKENS_PER_HANDLER;
 		if let Some(handler) = self.handlers.read().get(handler_index) {
-			if let Some(timer) = self.timers.read().get(&token.0) {
-				event_loop.timeout(token, Duration::from_millis(timer.delay)).expect("Error re-registering user timer");
+			let maybe_timer = self.timers.read().get(&token.0).cloned();
+			if let Some(timer) = maybe_timer {
+				if timer.once {
+					self.timers.write().remove(&token_id);
+					event_loop.clear_timeout(&timer.timeout);
+				} else {
+					event_loop.timeout(token, Duration::from_millis(timer.delay)).expect("Error re-registering user timer");
+				}
 				self.worker_channel.push(Work { work_type: WorkType::Timeout, token: token_id, handler: handler.clone(), handler_id: handler_index });
 				self.work_ready.notify_all();
 			}
@@ -264,10 +284,10 @@ impl<Message> Handler for IoManager<Message> where Message: Send + Clone + Sync 
 					event_loop.clear_timeout(&timer.timeout);
 				}
 			},
-			IoMessage::AddTimer { handler_id, token, delay } => {
+			IoMessage::AddTimer { handler_id, token, delay, once } => {
 				let timer_id = token + handler_id * TOKENS_PER_HANDLER;
 				let timeout = event_loop.timeout(Token(timer_id), Duration::from_millis(delay)).expect("Error registering user timer");
-				self.timers.write().insert(timer_id, UserTimer { delay: delay, timeout: timeout });
+				self.timers.write().insert(timer_id, UserTimer { delay: delay, timeout: timeout, once: once });
 			},
 			IoMessage::RemoveTimer { handler_id, token } => {
 				let timer_id = token + handler_id * TOKENS_PER_HANDLER;
@@ -399,8 +419,8 @@ impl<Message> IoService<Message> where Message: Send + Sync + Clone + 'static {
 		let thread = thread::spawn(move || {
 			let p = panic.clone();
 			panic.catch_panic(move || {
-				IoManager::<Message>::start(p, &mut event_loop, h).unwrap();
-			}).unwrap()
+				IoManager::<Message>::start(p, &mut event_loop, h).expect("Error starting IO service");
+			}).expect("Error starting panic handler")
 		});
 		Ok(IoService {
 			panic_handler: panic_handler,
@@ -433,8 +453,15 @@ impl<Message> IoService<Message> where Message: Send + Sync + Clone + 'static {
 impl<Message> Drop for IoService<Message> where Message: Send + Sync + Clone {
 	fn drop(&mut self) {
 		trace!(target: "shutdown", "[IoService] Closing...");
+		// Clear handlers so that shared pointers are not stuck on stack
+		// in Channel::send_sync
+		self.handlers.write().clear();
 		self.host_channel.lock().send(IoMessage::Shutdown).unwrap_or_else(|e| warn!("Error on IO service shutdown: {:?}", e));
-		self.thread.take().unwrap().join().ok();
+		if let Some(thread) = self.thread.take() {
+			thread.join().unwrap_or_else(|e| {
+				debug!(target: "shutdown", "Error joining IO service event loop thread: {:?}", e);
+			});
+		}
 		trace!(target: "shutdown", "[IoService] Closed.");
 	}
 }

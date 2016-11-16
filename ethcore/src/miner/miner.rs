@@ -21,7 +21,7 @@ use util::*;
 use util::using_queue::{UsingQueue, GetAction};
 use account_provider::AccountProvider;
 use views::{BlockView, HeaderView};
-use state::State;
+use state::{State, CleanupMode};
 use client::{MiningBlockChainClient, Executive, Executed, EnvInfo, TransactOptions, BlockID, CallAnalytics};
 use executive::contract_address;
 use block::{ClosedBlock, SealedBlock, IsBlock, Block};
@@ -212,7 +212,8 @@ pub struct Miner {
 	sealing_block_last_request: Mutex<u64>,
 	// for sealing...
 	options: MinerOptions,
-	seals_internally: bool,
+	/// Does the node perform internal (without work) sealing.
+	pub seals_internally: bool,
 
 	gas_range_target: RwLock<(U256, U256)>,
 	author: RwLock<Address>,
@@ -265,6 +266,11 @@ impl Miner {
 			work_poster: work_poster,
 			gas_pricer: Mutex::new(gas_pricer),
 		}
+	}
+
+	/// Creates new instance of miner with accounts and with given spec.
+	pub fn with_spec_and_accounts(spec: &Spec, accounts: Option<Arc<AccountProvider>>) -> Miner {
+		Miner::new_raw(Default::default(), GasPricer::new_fixed(20_000_000_000u64.into()), spec, accounts)
 	}
 
 	/// Creates new instance of miner without accounts, but with given spec.
@@ -429,6 +435,7 @@ impl Miner {
 			let last_request = *self.sealing_block_last_request.lock();
 			let should_disable_sealing = !self.forced_sealing()
 				&& !has_local_transactions
+				&& !self.seals_internally
 				&& best_block > last_request
 				&& best_block - last_request > SEALING_TIMEOUT_IN_BLOCKS;
 
@@ -472,9 +479,10 @@ impl Miner {
 
 	/// Uses Engine to seal the block internally and then imports it to chain.
 	fn seal_and_import_block_internally(&self, chain: &MiningBlockChainClient, block: ClosedBlock) -> bool {
-		if !block.transactions().is_empty() {
+		if !block.transactions().is_empty() || self.forced_sealing() {
 			if let Ok(sealed) = self.seal_block_internally(block) {
 				if chain.import_block(sealed.rlp_bytes()).is_ok() {
+					trace!(target: "miner", "import_block_internally: imported internally sealed block");
 					return true
 				}
 			}
@@ -650,7 +658,7 @@ impl MinerService for Miner {
 				let needed_balance = t.value + t.gas * t.gas_price;
 				if balance < needed_balance {
 					// give the sender a sufficient balance
-					state.add_balance(&sender, &(needed_balance - balance));
+					state.add_balance(&sender, &(needed_balance - balance), CleanupMode::NoEmpty);
 				}
 				let options = TransactOptions { tracing: analytics.transaction_tracing, vm_tracing: analytics.vm_tracing, check_nonce: false };
 				let mut ret = try!(Executive::new(&mut state, &env_info, &*self.engine, chain.vm_factory()).transact(t, options));
@@ -773,7 +781,7 @@ impl MinerService for Miner {
 		chain: &MiningBlockChainClient,
 		transactions: Vec<SignedTransaction>
 	) -> Vec<Result<TransactionImportResult, Error>> {
-
+		trace!(target: "external_tx", "Importing external transactions");
 		let results = {
 			let mut transaction_queue = self.transaction_queue.lock();
 			self.add_transactions_to_queue(
@@ -935,6 +943,8 @@ impl MinerService for Miner {
 								}
 							},
 							logs: receipt.logs.clone(),
+							log_bloom: receipt.log_bloom,
+							state_root: receipt.state_root,
 						}
 					})
 			}
@@ -1173,7 +1183,7 @@ mod tests {
 			gas: U256::from(100_000),
 			gas_price: U256::zero(),
 			nonce: U256::zero(),
-		}.sign(keypair.secret())
+		}.sign(keypair.secret(), None)
 	}
 
 	#[test]
@@ -1249,7 +1259,7 @@ mod tests {
 
 	#[test]
 	fn internal_seals_without_work() {
-		let miner = Miner::with_spec(&Spec::new_test_instant());
+		let miner = Miner::with_spec(&Spec::new_instant());
 
 		let c = generate_dummy_client(2);
 		let client = c.reference().as_ref();

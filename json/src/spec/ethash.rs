@@ -70,6 +70,33 @@ pub struct EthashParams {
 	/// See main EthashParams docs.
 	#[serde(rename="eip150Transition")]
 	pub eip150_transition: Option<Uint>,
+
+	/// See main EthashParams docs.
+	#[serde(rename="eip155Transition")]
+	pub eip155_transition: Option<Uint>,
+
+	/// See main EthashParams docs.
+	#[serde(rename="eip160Transition")]
+	pub eip160_transition: Option<Uint>,
+
+	/// See main EthashParams docs.
+	#[serde(rename="eip161abcTransition")]
+	pub eip161abc_transition: Option<Uint>,
+	/// See main EthashParams docs.
+	#[serde(rename="eip161dTransition")]
+	pub eip161d_transition: Option<Uint>,
+
+	/// See main EthashParams docs.
+	#[serde(rename="ecip1010PauseTransition")]
+	pub ecip1010_pause_transition: Option<Uint>,
+	/// See main EthashParams docs.
+	#[serde(rename="ecip1010ContinueTransition")]
+	pub ecip1010_continue_transition: Option<Uint>,
+
+	/// See main EthashParams docs.
+	#[serde(rename="maxCodeSize")]
+	pub max_code_size: Option<Uint>,
+
 }
 
 /// Ethash engine deserialization.
@@ -122,7 +149,11 @@ mod tests {
 				"difficultyHardforkTransition": "0x59d9",
 				"difficultyHardforkBoundDivisor": "0x0200",
 				"bombDefuseTransition": "0x42",
-				"eip150Transition": "0x42"
+				"eip150Transition": "0x42",
+				"eip155Transition": "0x42",
+				"eip160Transition": "0x42",
+				"eip161abcTransition": "0x42",
+				"eip161dTransition": "0x42"
 			}
 		}"#;
 

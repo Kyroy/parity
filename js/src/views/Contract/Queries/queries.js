@@ -16,11 +16,10 @@
 
 import BigNumber from 'bignumber.js';
 import React, { Component, PropTypes } from 'react';
-import Chip from 'material-ui/Chip';
 import { Card, CardTitle, CardText } from 'material-ui/Card';
 
 import InputQuery from './inputQuery';
-import { Container, ContainerTitle } from '../../../ui';
+import { Container, ContainerTitle, Input, InputAddress } from '../../../ui';
 
 import styles from './queries.css';
 
@@ -71,7 +70,7 @@ export default class Queries extends Component {
   }
 
   renderInputQuery (fn) {
-    const { abi, name } = fn;
+    const { abi, name, signature } = fn;
     const { contract } = this.props;
 
     return (
@@ -81,6 +80,7 @@ export default class Queries extends Component {
           inputs={ abi.inputs }
           outputs={ abi.outputs }
           name={ name }
+          signature={ signature }
           contract={ contract }
         />
       </div>
@@ -100,29 +100,48 @@ export default class Queries extends Component {
           <CardText
             className={ styles.methodContent }
           >
-            { this.renderValue(values[fn.name]) }
+            { this.renderValue(values[fn.name], fn.outputs[0].kind.type) }
           </CardText>
         </Card>
       </div>
     );
   }
 
-  renderValue (value) {
-    if (!value) return null;
+  renderValue (value, type) {
+    if (typeof value === 'undefined') {
+      return null;
+    }
 
     const { api } = this.context;
-    let valueToDisplay = value.toString();
+    let valueToDisplay = null;
 
     if (api.util.isInstanceOf(value, BigNumber)) {
       valueToDisplay = value.toFormat(0);
     } else if (api.util.isArray(value)) {
       valueToDisplay = api.util.bytesToHex(value);
+    } else if (typeof value === 'boolean') {
+      valueToDisplay = value ? 'true' : 'false';
+    } else {
+      valueToDisplay = value.toString();
+    }
+
+    if (type === 'address') {
+      return (
+        <InputAddress
+          className={ styles.queryValue }
+          value={ valueToDisplay }
+          disabled
+        />
+      );
     }
 
     return (
-      <Chip className={ styles.queryValue }>
-        { valueToDisplay }
-      </Chip>
+      <Input
+        className={ styles.queryValue }
+        value={ valueToDisplay }
+        readOnly
+        allowCopy
+      />
     );
   }
 

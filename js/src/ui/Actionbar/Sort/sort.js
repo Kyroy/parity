@@ -15,6 +15,8 @@
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
 import React, { Component, PropTypes } from 'react';
+import { observer } from 'mobx-react';
+
 import IconMenu from 'material-ui/IconMenu';
 import MenuItem from 'material-ui/MenuItem';
 
@@ -22,19 +24,34 @@ import SortIcon from 'material-ui/svg-icons/content/sort';
 
 import { Button } from '../../';
 
+import SortStore from './sortStore';
 import styles from './sort.css';
 
+@observer
 export default class ActionbarSort extends Component {
   static propTypes = {
+    id: PropTypes.string.isRequired,
     onChange: PropTypes.func.isRequired,
-    order: PropTypes.string
+
+    order: PropTypes.string,
+    showDefault: PropTypes.bool,
+    metas: PropTypes.array
   };
 
-  state = {
-    menuOpen: false
+  static defaultProps = {
+    metas: [],
+    showDefault: true
+  }
+
+  store = new SortStore(this.props);
+
+  componentDidMount () {
+    this.store.restoreSavedOrder();
   }
 
   render () {
+    const { showDefault } = this.props;
+
     return (
       <IconMenu
         iconButtonElement={
@@ -42,32 +59,62 @@ export default class ActionbarSort extends Component {
             className={ styles.sortButton }
             label=''
             icon={ <SortIcon /> }
-            onClick={ this.handleMenuOpen }
+            onClick={ this.store.handleMenuOpen }
             />
         }
-        open={ this.state.menuOpen }
-        onRequestChange={ this.handleMenuChange }
-        onItemTouchTap={ this.handleSortChange }
+        open={ this.store.menuOpen }
+        onRequestChange={ this.store.handleMenuChange }
+        onItemTouchTap={ this.store.handleSortChange }
         targetOrigin={ { horizontal: 'right', vertical: 'top' } }
         anchorOrigin={ { horizontal: 'right', vertical: 'top' } }
-        >
-        <MenuItem value='' primaryText='Default' />
-        <MenuItem value='tags' primaryText='Sort by tags' />
-        <MenuItem value='name' primaryText='Sort by name' />
+        touchTapCloseDelay={ 0 }
+      >
+        {
+          showDefault
+          ? this.renderMenuItem('', 'Default')
+          : null
+        }
+        { this.renderMenuItem('tags', 'Sort by tags') }
+        { this.renderMenuItem('name', 'Sort by name') }
+        { this.renderMenuItem('eth', 'Sort by ETH') }
+
+        { this.renderSortByMetas() }
       </IconMenu>
     );
   }
 
-  handleSortChange = (event, child) => {
-    const order = child.props.value;
-    this.props.onChange(order);
+  renderSortByMetas () {
+    const { metas } = this.props;
+
+    return metas
+      .map((meta, index) => {
+        return this
+          .renderMenuItem(meta.key, `Sort by ${meta.label}`, index);
+      });
   }
 
-  handleMenuOpen = () => {
-    this.setState({ menuOpen: true });
+  renderMenuItem (value, label, key = null) {
+    const { order } = this.props;
+
+    const props = {};
+
+    if (key !== null) {
+      props.key = key;
+    }
+
+    const checked = order === value;
+
+    return (
+      <MenuItem
+        checked={ checked }
+        value={ value }
+        primaryText={ label }
+        innerDivStyle={ {
+          paddingLeft: checked ? 50 : 16
+        } }
+        { ...props }
+      />
+    );
   }
 
-  handleMenuChange = (open) => {
-    this.setState({ menuOpen: open });
-  }
 }
