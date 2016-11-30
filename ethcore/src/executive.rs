@@ -29,6 +29,9 @@ use transaction::{Action, SignedTransaction};
 use crossbeam;
 pub use types::executed::{Executed, ExecutionResult};
 
+//for custom logging
+use time::precise_time_ns;
+
 /// Roughly estimate what stack size each level of evm depth will use
 /// TODO [todr] We probably need some more sophisticated calculations here (limit on my machine 132)
 /// Maybe something like here: `https://github.com/ethereum/libethereum/blob/4db169b8504f2b87f7d5a481819cfb959fc65f6c/libethereum/ExtVM.cpp`
@@ -122,6 +125,7 @@ impl<'a> Executive<'a> {
 		mut tracer: T,
 		mut vm_tracer: V
 	) -> Result<Executed, ExecutionError> where T: Tracer, V: VMTracer {
+		println!("Transaction {:?}, start timestamp: {}", t.hash(), precise_time_ns());
 		let sender = try!(t.sender().map_err(|e| {
 			let message = format!("Transaction malformed: {:?}", e);
 			ExecutionError::TransactionMalformed(message)
@@ -445,7 +449,7 @@ impl<'a> Executive<'a> {
 
 		trace!("exec::finalize: Refunding refund_value={}, sender={}\n", refund_value, sender);
 		// Below: NoEmpty is safe since the sender must already be non-null to have sent this transaction
-		self.state.add_balance(&sender, &refund_value, CleanupMode::NoEmpty);  
+		self.state.add_balance(&sender, &refund_value, CleanupMode::NoEmpty);
 		trace!("exec::finalize: Compensating author: fees_value={}, author={}\n", fees_value, &self.info.author);
 		self.state.add_balance(&self.info.author, &fees_value, substate.to_cleanup_mode(&schedule));
 
@@ -460,6 +464,9 @@ impl<'a> Executive<'a> {
 				self.state.kill_account(address);
 			}
 		}
+
+		// print transaction end timestamp
+		println!("Transaction {:?}, end timestamp: {}", t.hash(), precise_time_ns());
 
 		match result {
 			Err(evm::Error::Internal) => Err(ExecutionError::Internal),
@@ -514,9 +521,11 @@ impl<'a> Executive<'a> {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
+	use std::sync::Arc;
 	use ethkey::{Generator, Random};
 	use super::*;
-	use util::*;
+	use util::{H256, U256, U512, Address, Uint, FixedHash, FromHex, FromStr};
+	use util::bytes::BytesRef;
 	use action_params::{ActionParams, ActionValue};
 	use env_info::EnvInfo;
 	use evm::{Factory, VMType};
